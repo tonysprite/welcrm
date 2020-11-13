@@ -1,0 +1,297 @@
+##C#调用接口代码示例
+###sig生成
+注意：具体业务请根据接口要求完成，代码仅供参考
+```c#
+#region Create Sign
+        public static string CreateSign(IDictionary<string, string> paramsMap)
+        {
+            //排序参数后加sn，然后将参数md5，作为请求参数 sign 值
+            Dictionary<string, string> d = paramsMap.OrderBy(o => o.Key).ToDictionary(o => o.Key, p => p.Value);
+            StringBuilder sb = new StringBuilder();
+            foreach (var item in d)
+            {
+                sb.Append(item.Key);
+                sb.Append("=");
+                sb.Append(item.Value);
+                sb.Append("&");
+            }
+            string sign = MD5Util.GetMD5_32(sb.ToString().TrimEnd('&'));
+
+            return sign;
+        }
+        #endregion
+```
+###MD5代码
+```c#
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Text;
+
+namespace PinZhi.Catering.Commons
+{
+    /// <summary>
+    /// MD5各种长度加密字符、验证MD5等操作辅助类
+    /// </summary>
+    public class MD5Util
+    {
+        public MD5Util()
+        {
+        }
+
+        /// <summary>
+        /// 获得32位的MD5加密
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public static string GetMD5_32(string input)
+        {
+            System.Security.Cryptography.MD5 md5 = System.Security.Cryptography.MD5.Create();
+            if (input != null && input != "")
+            {
+                byte[] data = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < data.Length; i++)
+                {
+                    sb.Append(data[i].ToString("x2"));
+                }
+                return sb.ToString();
+            }
+            else {
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// 获得16位的MD5加密
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public static string GetMD5_16(string input)
+        {
+            return GetMD5_32(input).Substring(8, 16);
+        }
+
+        /// <summary>
+        /// 获得8位的MD5加密
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public static string GetMD5_8(string input)
+        {
+            return GetMD5_32(input).Substring(8, 8);
+        }
+
+        /// <summary>
+        /// 获得4位的MD5加密
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public static string GetMD5_4(string input)
+        {
+            return GetMD5_32(input).Substring(8, 4);
+        }
+
+        /// <summary>
+        /// 添加MD5的前缀，便于检查有无篡改
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public static string AddMD5Profix(string input)
+        {
+            return GetMD5_4(input) + input;
+        }
+
+        /// <summary>
+        /// 移除MD5的前缀
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public static string RemoveMD5Profix(string input)
+        {
+            return input.Substring(4);
+        }
+
+        /// <summary>
+        /// 验证MD5前缀处理的字符串有无被篡改
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public static bool ValidateValue(string input)
+        {
+            bool res = false;
+            if (input.Length >= 4)
+            {
+                string tmp = input.Substring(4);
+                if (input.Substring(0, 4) == GetMD5_4(tmp))
+                {
+                    res = true;
+                }
+            }
+            return res;
+        }
+
+        #region MD5签名验证
+        /// <summary>
+        /// 对给定文件路径的文件加上标签
+        /// </summary>
+        /// <param name="path">要加密的文件的路径</param>
+        /// <returns>标签的值</returns>
+        public static bool AddMD5(string path)
+        {
+            bool IsNeed = true;
+
+            if (CheckMD5(path))                                  //已进行MD5处理
+                IsNeed = false;
+
+            try
+            {
+                FileStream fsread = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                byte[] md5File = new byte[fsread.Length];
+                fsread.Read(md5File, 0, (int)fsread.Length);                               // 将文件流读取到Buffer中
+                fsread.Close();
+
+                if (IsNeed)
+                {
+                    string result = MD5Buffer(md5File, 0, md5File.Length);             // 对Buffer中的字节内容算MD5
+                    byte[] md5 = System.Text.Encoding.ASCII.GetBytes(result);       // 将字符串转换成字节数组以便写人到文件中
+                    FileStream fsWrite = new FileStream(path, FileMode.Open, FileAccess.ReadWrite);
+                    fsWrite.Write(md5File, 0, md5File.Length);                               // 将文件，MD5值 重新写入到文件中。
+                    fsWrite.Write(md5, 0, md5.Length);
+                    fsWrite.Close();
+                }
+                else
+                {
+                    FileStream fsWrite = new FileStream(path, FileMode.Open, FileAccess.ReadWrite);
+                    fsWrite.Write(md5File, 0, md5File.Length);
+                    fsWrite.Close();
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 对给定路径的文件进行验证
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns>是否加了标签或是否标签值与内容值一致</returns>
+        public static bool CheckMD5(string path)
+        {
+            try
+            {
+                FileStream get_file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                byte[] md5File = new byte[get_file.Length];                                      // 读入文件
+                get_file.Read(md5File, 0, (int)get_file.Length);
+                get_file.Close();
+
+                string result = MD5Buffer(md5File, 0, md5File.Length - 32);             // 对文件除最后32位以外的字节计算MD5，这个32是因为标签位为32位。
+                string md5 = System.Text.Encoding.ASCII.GetString(md5File, md5File.Length - 32, 32);   //读取文件最后32位，其中保存的就是MD5值
+                return result == md5;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 计算文件的MD5值
+        /// </summary>
+        /// <param name="MD5File">MD5签名文件字符数组</param>
+        /// <param name="index">计算起始位置</param>
+        /// <param name="count">计算终止位置</param>
+        /// <returns>计算结果</returns>
+        private static string MD5Buffer(byte[] MD5File, int index, int count)
+        {
+            System.Security.Cryptography.MD5CryptoServiceProvider get_md5 = new System.Security.Cryptography.MD5CryptoServiceProvider();
+            byte[] hash_byte = get_md5.ComputeHash(MD5File, index, count);
+            string result = System.BitConverter.ToString(hash_byte);
+
+            result = result.Replace("-", "");
+            return result;
+        }
+        #endregion
+
+        private void Test()
+        {
+            string o = "i love u";
+            o = AddMD5Profix(o);
+            //o += " ";
+            Console.WriteLine(o);
+            Console.WriteLine(ValidateValue(o));
+
+            o = RemoveMD5Profix(o);
+            Console.WriteLine(o);
+
+        }
+    }
+}
+
+```
+###创建API所需参数
+```c#
+#region 创建API所需参数
+        public static IDictionary<string, string> CreateParamsMap(string method, string bizContentJson)
+        {
+            IDictionary<string, string> paramsMap = new Dictionary<string, string>();
+            paramsMap.Add("method", method);
+            paramsMap.Add("timeStamp", DateTimeToUnixTimestamp(DateTime.Now).ToString());
+            paramsMap.Add("version", "1.0");
+            paramsMap.Add("bizContent", bizContentJson);
+            paramsMap.Add("sign", CreateSign(paramsMap));
+
+            return paramsMap;
+        }
+
+        public static IDictionary<string, string> CreateParamsMap(string method, string bizContentJson)
+        {
+            return CreateParamsMap(method, Commons.Public.OgnNo, Commons.Public.License, bizContentJson);
+        }
+        #endregion
+```
+###执行HTTP POST请求
+```c#
+#region 执行HTTP POST请求
+        /// <summary>
+        /// 执行HTTP POST请求。
+        /// </summary>
+        /// <param name="url">请求地址</param>
+        /// <param name="parameters">请求参数</param>
+        /// <param name="charset">编码字符集</param>
+        /// <returns>HTTP响应</returns>
+        public string DoPost(string url, IDictionary<string, string> parameters, string charset)
+        {
+        
+                HttpWebRequest req = GetWebRequest(url, "POST");
+                req.ContentType = "application/x-www-form-urlencoded;charset=" + charset;
+                //req.ContentType = "text/xml";
+                Stream reqStream = null;
+                try
+                {
+                    byte[] postData = Encoding.GetEncoding(charset).GetBytes(BuildQuery(parameters, charset));
+                    reqStream = req.GetRequestStream();
+                    reqStream.Write(postData, 0, postData.Length);
+                    reqStream.Close();
+
+                    HttpWebResponse rsp = (HttpWebResponse)req.GetResponse();
+                    Encoding encoding = Encoding.GetEncoding(rsp.CharacterSet);
+                    //return ReturnResult("44444", "远程接口没有响应", "");
+                    return GetResponseAsString(rsp, encoding);
+                }
+                catch (Exception ex)
+                {
+                    return ReturnResult("44444", "远程接口没有响应", "");
+                }
+                finally
+                {
+
+                }
+           
+        }
+        #endregion
+```
